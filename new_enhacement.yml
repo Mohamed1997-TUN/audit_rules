@@ -3,9 +3,9 @@
   gather_facts: no
   connection: local
   vars:
-    cutoff_days: 10  # Modify this value according to the number of days
+    cutoff_days: 10  # Number of days to determine unused rules
     vdom: "root"
-    output_file: "/home/dhia/Desktop/createfirewall/jinjatest/unused_rules_{{ cutoff_days }}days.txt"
+    output_file: "/home/dhia/Desktop/createfirewall/audit_rules/unused_rules_{{ cutoff_days }}days.txt"
 
   tasks:
     - name: Get current epoch timestamp (controller-side)
@@ -25,8 +25,12 @@
         headers:
           Authorization: "Bearer {{ fortigate_token }}"
         return_content: yes
-        validate_certs: no
+        status_code: 200
       register: policy_response
+
+    - name: Debug API response to verify structure
+      debug:
+        var: policy_response
 
     - name: Filter rules unused since cutoff OR never used
       set_fact:
@@ -38,7 +42,7 @@
             {% endif %}
           {% endfor %}]
 
-    - name: Convert 'Last Used' epoch timestamps to readable date (day only)
+    - name: Convert 'Last Used' epoch timestamps to readable date
       set_fact:
         converted_unused_rules: >-
           [{% for rule in unused_rules %}
