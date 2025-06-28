@@ -1,5 +1,5 @@
 - name: Test pushing file from AWX to local machine
-  hosts: all
+  hosts: localhost
   become: true
 
   tasks:
