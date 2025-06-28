@@ -1,15 +1,32 @@
-- name: Test pushing file from AWX to local machine
+- name: Create file in AWX and copy to local machine via SCP
   hosts: localhost
-  become: true
+  gather_facts: false
+  vars:
+    file_content: "Hello from AWX"
+    file_name: "test_awx.txt"
+    awx_output_dir: "/tmp"  # AWX can write here
+    local_machine_ip: "192.168.11.209"
+    local_machine_user: "dhia"
+    local_machine_path: "/home/dhia/Desktop/createfirewall/audit_rules"
+    scp_password: "96808538"
 
   tasks:
-    - name: Ensure target directory exists
-      file:
-        path: /home/dhia/Desktop/createfirewall/audit_rules
-        state: directory
-        mode: '0755'
 
-    - name: Create test file on local machine
+    - name: Create file on AWX host
       copy:
-        dest: /home/dhia/Desktop/createfirewall/audit_rules/test_awx.txt
-        content: "Hello from AWX!"
+        content: "{{ file_content }}"
+        dest: "{{ awx_output_dir }}/{{ file_name }}"
+      delegate_to: localhost
+
+    - name: Install sshpass (required for password-based SCP)
+      package:
+        name: sshpass
+        state: present
+      become: true
+      delegate_to: localhost
+
+    - name: Copy file to local machine via SCP
+      ansible.builtin.command: >
+        sshpass -p {{ scp_password }} scp -o StrictHostKeyChecking=no {{ awx_output_dir }}/{{ file_name }}
+        {{ local_machine_user }}@{{ local_machine_ip }}:{{ local_machine_path }}/
+      delegate_to: localhost
