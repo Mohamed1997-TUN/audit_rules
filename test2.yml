@@ -1,0 +1,8 @@
+- name: Test SSH access to local machine
+  hosts: localhost
+  become: true
+  tasks:
+    - name: Create a file
+      copy:
+        dest: /home/dhia/Desktop/createfirewall/audit_rules/test_awx.txt
+        content: "AWX was here!"
