@@ -1,29 +1,32 @@
-- name: Test copying a file from AWX to local machine via SCP
+- name: Test copying a file from AWX to your local machine
   hosts: localhost
   gather_facts: false
   vars:
-    content_to_write: "Hello from AWX!"
-    temp_file_path: "/home/dhia/Desktop/createfirewall/audit_rules/hello_awx.txt"
+    content_to_write: "Hello from AWX controller!"
+    temp_file_path: "/tmp/hello_awx.txt"
 
     local_machine_ip: "192.168.11.209"
     local_machine_user: "dhia"
-    scp_password: "96808538"  # WARNING: avoid hardcoding in production
+    scp_password: "96808538"
     local_machine_path: "/home/dhia/Desktop/createfirewall/audit_rules"
 
   tasks:
-    - name: Create a test file on AWX controller
+
+    - name: Create a file on AWX controller (inside container)
       copy:
         content: "{{ content_to_write }}"
         dest: "{{ temp_file_path }}"
 
-    - name: Ensure destination directory exists on local machine
+    - name: Ensure the target directory exists on local machine
       command: >
-        sshpass -p {{ scp_password }} ssh -o StrictHostKeyChecking=no {{ local_machine_user }}@{{ local_machine_ip }}
+        sshpass -p {{ scp_password }}
+        ssh -o StrictHostKeyChecking=no {{ local_machine_user }}@{{ local_machine_ip }}
         "mkdir -p {{ local_machine_path }}"
       delegate_to: localhost
 
-    - name: Copy the file to local machine via SCP
+    - name: Copy the file from AWX controller to local machine
       command: >
-        sshpass -p {{ scp_password }} scp -o StrictHostKeyChecking=no {{ temp_file_path }}
+        sshpass -p {{ scp_password }}
+        scp -o StrictHostKeyChecking=no {{ temp_file_path }}
         {{ local_machine_user }}@{{ local_machine_ip }}:{{ local_machine_path }}/
       delegate_to: localhost
