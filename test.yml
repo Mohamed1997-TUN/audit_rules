@@ -11,13 +11,9 @@
         path: "/home/dhia/Desktop/createfirewall/audit_rules"
         state: directory
         mode: '0755'
-      become: yes
-      become_user: dhia
-
+    
     - name: Save 'Hello' to the file
       copy:
         content: "Hello"
         dest: "{{ output_file }}"
         mode: '0644'
-      become: yes
-      become_user: dhia
