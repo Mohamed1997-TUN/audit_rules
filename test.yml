@@ -11,7 +11,7 @@
         path: "/home/dhia/Desktop/createfirewall/audit_rules"
         state: directory
         mode: '0755'
-      become: yes
+      become: True
       become_user: dhia
       delegate_to: localhost
 
@@ -20,6 +20,6 @@
         content: "Hello"
         dest: "{{ output_file }}"
         mode: '0644'
-      become: yes
+      become: True
       become_user: dhia
       delegate_to: localhost
