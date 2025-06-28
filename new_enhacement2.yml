@@ -1,4 +1,4 @@
-- name: Generate and Save Firewall Report in AWX
+- name: Get and convert unused FortiGate firewall rules since X days ago
   hosts: fortigate
   gather_facts: no
   connection: local
@@ -7,9 +7,9 @@
     vdom: "root"
     output_file: "/home/dhia/Desktop/createfirewall/audit_rules/unused_rules_{{ cutoff_days }}days.html"
     output_dir: "/home/dhia/Desktop/createfirewall/audit_rules"
-    artifact_dir: "/tmp/artifacts"  # Directory where the artifact will be stored
 
   tasks:
+
     - name: Ensure output directory exists
       file:
         path: "{{ output_dir }}"
@@ -94,19 +94,3 @@
         dest: "{{ output_file }}"
       delegate_to: localhost
 
-    - name: Ensure artifact directory exists
-      file:
-        path: "{{ artifact_dir }}"
-        state: directory
-        mode: '0755'
-      delegate_to: localhost
-
-    - name: Copy report to artifact directory for AWX
-      copy:
-        src: "{{ output_file }}"
-        dest: "{{ artifact_dir }}/unused_rules_{{ cutoff_days }}days.html"
-      delegate_to: localhost
-
-    - name: Register artifact in AWX
-      command: "echo 'Artifact stored at {{ artifact_dir }}/unused_rules_{{ cutoff_days }}days.html'"
-      delegate_to: localhost
