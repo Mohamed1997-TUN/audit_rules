@@ -1,31 +1,34 @@
-- name: Get and transfer unused FortiGate firewall rules report
+- name: Get and convert unused FortiGate firewall rules since X days ago
   hosts: fortigate
   gather_facts: no
   connection: local
   vars:
-    cutoff_days: 10
+    cutoff_days: 10  # Number of days to determine unused rules
     vdom: "root"
-    output_file: "/tmp/unused_rules_{{ cutoff_days }}days.html"  # AWX will generate here
-    remote_user: dhia
-    remote_host: 192.168.11.209       # <- Change this to your real machine IP
-    remote_path: "/home/dhia/Desktop" # <- Your destination directory
+    output_file: "/home/dhia/Desktop/createfirewall/audit_rules/unused_rules_{{ cutoff_days }}days.html"
+    output_dir: "/home/dhia/Desktop/createfirewall/audit_rules"
+    local_machine_ip: "192.168.11.209"  # IP address of your local machine
+    local_machine_user: "dhia"  # SSH user for your local machine
+    local_path: "/home/dhia/Desktop/createfirewall"  # Local path where the file will be saved
 
   tasks:
 
-    - name: Ensure output directory exists (in AWX container)
+    - name: Ensure output directory exists
       file:
-        path: "/tmp"
+        path: "{{ output_dir }}"
         state: directory
         mode: '0755'
+      delegate_to: localhost
 
-    - name: Get current epoch timestamp
+    - name: Get current epoch timestamp (controller-side)
       command: date +%s
+      delegate_to: localhost
       register: current_epoch_result
 
     - name: Set current and cutoff epoch
       set_fact:
         current_epoch: "{{ current_epoch_result.stdout | int }}"
-        cutoff_epoch: "{{ current_epoch_result.stdout | int - (cutoff_days * 86400) }}"
+        cutoff_epoch: "{{ (current_epoch_result.stdout | int) - (cutoff_days * 86400) }}"
 
     - name: Get firewall policy stats from FortiGate
       uri:
@@ -37,6 +40,10 @@
         status_code: 200
       register: policy_response
 
+    - name: Debug API response to verify structure
+      debug:
+        var: policy_response
+
     - name: Filter rules unused since cutoff OR never used
       set_fact:
         unused_rules: >-
@@ -47,7 +54,7 @@
             {% endif %}
           {% endfor %}]
 
-    - name: Convert last_used timestamps to readable date
+    - name: Convert 'Last Used' epoch timestamps to readable date
       set_fact:
         converted_unused_rules: >-
           [{% for rule in unused_rules %}
@@ -59,7 +66,7 @@
             {% endif %}
           {% endfor %}]
 
-    - name: Save unused rules to HTML (inside AWX container)
+    - name: Save unused rules to HTML for browser view
       copy:
         content: |
           <!DOCTYPE html>
@@ -88,8 +95,9 @@
           </body>
           </html>
         dest: "{{ output_file }}"
-
-    - name: Copy report to your real machine via SCP
       delegate_to: localhost
-      ansible.builtin.command:
-        cmd: "scp -o StrictHostKeyChecking=no {{ output_file }} {{ remote_user }}@{{ remote_host }}:{{ remote_path }}"
+
+    - name: Use SCP to copy HTML file from remote to local machine
+      command: >
+        scp {{ output_file }} {{ local_machine_user }}@{{ local_machine_ip }}:{{ local_path }}/
+      delegate_to: localhost
