@@ -1,0 +1,112 @@
+- name: Generate and Save Firewall Report in AWX
+  hosts: fortigate
+  gather_facts: no
+  connection: local
+  vars:
+    cutoff_days: 10  # Number of days to determine unused rules
+    vdom: "root"
+    output_file: "/home/dhia/Desktop/createfirewall/audit_rules/unused_rules_{{ cutoff_days }}days.html"
+    output_dir: "/home/dhia/Desktop/createfirewall/audit_rules"
+    artifact_dir: "/tmp/artifacts"  # Directory where the artifact will be stored
+
+  tasks:
+    - name: Ensure output directory exists
+      file:
+        path: "{{ output_dir }}"
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+
+    - name: Get current epoch timestamp (controller-side)
+      command: date +%s
+      delegate_to: localhost
+      register: current_epoch_result
+
+    - name: Set current and cutoff epoch
+      set_fact:
+        current_epoch: "{{ current_epoch_result.stdout | int }}"
+        cutoff_epoch: "{{ (current_epoch_result.stdout | int) - (cutoff_days * 86400) }}"
+
+    - name: Get firewall policy stats from FortiGate
+      uri:
+        url: "http://{{ ansible_host }}/api/v2/monitor/firewall/policy?vdom={{ vdom }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ fortigate_token }}"
+        return_content: yes
+        status_code: 200
+      register: policy_response
+
+    - name: Debug API response to verify structure
+      debug:
+        var: policy_response
+
+    - name: Filter rules unused since cutoff OR never used
+      set_fact:
+        unused_rules: >-
+          [{% for rule in (policy_response.json.results | default([])) %}
+            {% set last_used = (rule.get('last_used', 0) | int) %}
+            {% if last_used == 0 or last_used < (cutoff_epoch | int) %}
+              {{ rule | combine({'last_used': last_used}) }}{% if not loop.last %},{% endif %}
+            {% endif %}
+          {% endfor %}]
+
+    - name: Convert 'Last Used' epoch timestamps to readable date
+      set_fact:
+        converted_unused_rules: >-
+          [{% for rule in unused_rules %}
+            {% if rule.last_used != 0 %}
+              {% set human_date = lookup('pipe', 'date -d @' ~ rule.last_used ~ ' "+%Y-%m-%d"') %}
+              {{ rule | combine({'last_used': human_date}) }}{% if not loop.last %},{% endif %}
+            {% else %}
+              {{ rule | combine({'last_used': 'N/A'}) }}{% if not loop.last %},{% endif %}
+            {% endif %}
+          {% endfor %}]
+
+    - name: Save unused rules to HTML for browser view
+      copy:
+        content: |
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <title>Unused Firewall Rules</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              .rule { border-bottom: 1px solid #ccc; margin-bottom: 15px; padding-bottom: 10px; }
+            </style>
+          </head>
+          <body>
+            <h1>Unused Firewall Rules (Last {{ cutoff_days }} days)</h1>
+            {% for rule in converted_unused_rules | default([]) %}
+              <div class="rule">
+                <strong>ID:</strong> {{ rule.policyid }}<br>
+                <strong>Last Used:</strong> {{ rule.last_used }}<br>
+                <strong>Bytes:</strong> {{ rule.bytes | default('N/A') }}<br>
+                <strong>Hit Count:</strong> {{ rule.hit_count | default('0') }}<br>
+                <strong>Comments:</strong> {{ rule.comments | default('N/A') }}
+              </div>
+            {% else %}
+              <p>No unused rules found.</p>
+            {% endfor %}
+          </body>
+          </html>
+        dest: "{{ output_file }}"
+      delegate_to: localhost
+
+    - name: Ensure artifact directory exists
+      file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+
+    - name: Copy report to artifact directory for AWX
+      copy:
+        src: "{{ output_file }}"
+        dest: "{{ artifact_dir }}/unused_rules_{{ cutoff_days }}days.html"
+      delegate_to: localhost
+
+    - name: Register artifact in AWX
+      command: "echo 'Artifact stored at {{ artifact_dir }}/unused_rules_{{ cutoff_days }}days.html'"
+      delegate_to: localhost
