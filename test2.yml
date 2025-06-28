@@ -1,8 +1,15 @@
-- name: Test SSH access to local machine
-  hosts: localhost
+- name: Test pushing file from AWX to local machine
+  hosts: all
   become: true
+
   tasks:
-    - name: Create a file
+    - name: Ensure target directory exists
+      file:
+        path: /home/dhia/Desktop/createfirewall/audit_rules
+        state: directory
+        mode: '0755'
+
+    - name: Create test file on local machine
       copy:
         dest: /home/dhia/Desktop/createfirewall/audit_rules/test_awx.txt
-        content: "AWX was here!"
+        content: "Hello from AWX!"
