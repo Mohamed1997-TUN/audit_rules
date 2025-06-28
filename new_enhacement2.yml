@@ -99,5 +99,5 @@
 
     - name: Use SCP to copy HTML file from remote to local machine
       command: >
-        scp {{ output_file }} {{ local_machine_user }}@{{ local_machine_ip }}:{{ local_path }}/
+        scp -o StrictHostKeyChecking=no {{ output_file }} {{ local_machine_user }}@{{ local_machine_ip }}:{{ local_path }}/
       delegate_to: localhost
