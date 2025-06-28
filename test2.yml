@@ -1,24 +1,29 @@
-- name: Create and copy a file from AWX to your local machine
+- name: Test copying a file from AWX to local machine via SCP
   hosts: localhost
   gather_facts: false
   vars:
+    content_to_write: "Hello from AWX!"
+    temp_file_path: "/home/dhia/Desktop/createfirewall/audit_rules/hello_awx.txt"
+
     local_machine_ip: "192.168.11.209"
     local_machine_user: "dhia"
-    scp_password: "96808538"
+    scp_password: "96808538"  # WARNING: avoid hardcoding in production
     local_machine_path: "/home/dhia/Desktop/createfirewall/audit_rules"
-    file_name: "hello_awx.txt"
-    file_content: "Hello from AWX via SCP!"
-    awx_output_dir: "/home/dhia/Desktop/createfirewall/audit_rules"  # <== Use a writable directory in AWX
 
   tasks:
-    - name: Create the test file in /runner directory
+    - name: Create a test file on AWX controller
       copy:
-        content: "{{ file_content }}"
-        dest: "{{ awx_output_dir }}/{{ file_name }}"
+        content: "{{ content_to_write }}"
+        dest: "{{ temp_file_path }}"
 
-    - name: Copy file to your local machine via SCP
-      ansible.builtin.command: >
-        sshpass -p {{ scp_password }} scp -o StrictHostKeyChecking=no
-        {{ awx_output_dir }}/{{ file_name }}
+    - name: Ensure destination directory exists on local machine
+      command: >
+        sshpass -p {{ scp_password }} ssh -o StrictHostKeyChecking=no {{ local_machine_user }}@{{ local_machine_ip }}
+        "mkdir -p {{ local_machine_path }}"
+      delegate_to: localhost
+
+    - name: Copy the file to local machine via SCP
+      command: >
+        sshpass -p {{ scp_password }} scp -o StrictHostKeyChecking=no {{ temp_file_path }}
         {{ local_machine_user }}@{{ local_machine_ip }}:{{ local_machine_path }}/
       delegate_to: localhost
