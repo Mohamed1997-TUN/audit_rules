@@ -13,7 +13,7 @@
         dest: "{{ test_file }}"
         content: "Hello from AWX!\n"
 
-    - name: Copy the file to your local machine via SCP
+    - name: Copy file with SCP ignoring host key
       command: >
-        scp -o StrictHostKeyChecking=no {{ test_file }} {{ local_machine_user }}@{{ local_machine_ip }}:{{ local_machine_target_dir }}/
+        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null /tmp/hello.txt dhia@192.168.11.209:/home/dhia/
       delegate_to: localhost
