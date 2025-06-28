@@ -1,25 +1,19 @@
-- name: Save 'Hello' to a file
+- name: Simple SCP test from AWX to local machine
   hosts: localhost
   gather_facts: no
-  connection: local
   vars:
-    output_file: "/home/dhia/Desktop/createfirewall/audit_rules/hello.txt"
+    local_machine_ip: "192.168.11.209"
+    local_machine_user: "dhia"
+    local_machine_target_dir: "/home/dhia/Desktop/createfirewall/audit_rules"
+    test_file: "/home/dhia/Desktop/createfirewall/hello.txt"
 
   tasks:
-    - name: Ensure output directory exists
-      file:
-        path: "/home/dhia/Desktop/createfirewall/audit_rules"
-        state: directory
-        mode: '0755'
-      become: True
-      become_user: dhia
-      delegate_to: localhost
-
-    - name: Save 'Hello' to the file
+    - name: Create a test file on AWX controller
       copy:
-        content: "Hello"
-        dest: "{{ output_file }}"
-        mode: '0644'
-      become: True
-      become_user: dhia
+        content: "Hello from AWX!"
+        dest: "{{ test_file }}"
+
+    - name: Transfer file to local machine via SCP
+      command: >
+        scp {{ test_file }} {{ local_machine_user }}@{{ local_machine_ip }}:{{ local_machine_target_dir }}/
       delegate_to: localhost
