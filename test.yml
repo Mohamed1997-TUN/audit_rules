@@ -1,17 +1,19 @@
-- name: SCP file to local machine from AWX
+- name: Test saving a file to my local machine via AWX
   hosts: localhost
   gather_facts: no
   vars:
-    local_machine_ip: "192.168.11.209"
-    local_machine_user: "dhia"
+    local_machine_ip: "192.168.11.209"      # Your local machine's IP
+    local_machine_user: "dhia"              # Your local machine's SSH user
     local_machine_target_dir: "/home/dhia/Desktop/createfirewall/audit_rules"
-    test_file: "/tmp/hello_awx.txt"
+    test_file: "/tmp/hello.txt"
 
   tasks:
-    - name: Create test file in AWX controller
-      ansible.builtin.shell: echo "Hello from AWX" > {{ test_file }}
+    - name: Create a test file on the controller
+      copy:
+        dest: "{{ test_file }}"
+        content: "Hello from AWX!\n"
 
-    - name: SCP test file to local machine
-      ansible.builtin.command: >
-        scp {{ test_file }} {{ local_machine_user }}@{{ local_machine_ip }}:{{ local_machine_target_dir }}/
+    - name: Copy the file to your local machine via SCP
+      command: >
+        scp -o StrictHostKeyChecking=no {{ test_file }} {{ local_machine_user }}@{{ local_machine_ip }}:{{ local_machine_target_dir }}/
       delegate_to: localhost
