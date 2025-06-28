@@ -20,7 +20,7 @@
 
     - name: Get firewall policy stats from FortiGate
       uri:
-        url: "http://{{ inventory_hostname }}/api/v2/monitor/firewall/policy?vdom={{ vdom }}"
+        url: "http://{{ ansible_host }}/api/v2/monitor/firewall/policy?vdom={{ vdom }}"
         method: GET
         headers:
           Authorization: "Bearer {{ fortigate_token }}"
