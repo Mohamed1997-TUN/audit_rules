@@ -6,7 +6,7 @@
 
   vars:
     vdom: "root"
-    output_file: "/home/dhia/Desktop/createfirewall/jinjatest/rules_without_comments.txt"
+    output_file: "/home/dhia/Desktop/createfirewall/audit_rules/rules_without_comments.txt"
 
   tasks:
 
