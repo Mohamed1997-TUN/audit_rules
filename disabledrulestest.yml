@@ -1,0 +1,118 @@
+---
+- name: Detect and export disabled FortiGate firewall rules
+  hosts: fortigate
+  gather_facts: no
+  connection: local
+
+  vars:
+    vdom: "root"
+    fortigate_token: "Qphsdnt9gNG4k9HNb0pd6HmkdpH4m8"
+    scp_password: "96808538"
+    local_machine_ip: "192.168.11.209"
+    local_machine_user: "dhia"
+    local_machine_path: "/home/dhia/Desktop/createfirewall/audit_rules"
+    output_dir: "/home/dhia/Desktop/createfirewall/audit_rules"
+    output_file: "{{ output_dir }}/disabled_rules.html"
+
+  tasks:
+
+    - name: Ensure output directory exists
+      file:
+        path: "{{ output_dir }}"
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+
+    - name: Get firewall policy list from FortiGate
+      uri:
+        url: "http://{{ ansible_host }}/api/v2/cmdb/firewall/policy?vdom={{ vdom }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ fortigate_token }}"
+        return_content: yes
+        validate_certs: no
+        status_code: 200
+      register: firewall_policies
+
+    - name: Extract disabled rules
+      set_fact:
+        disabled_rules: >-
+          {{
+            firewall_policies.json.results
+            | selectattr('status', 'equalto', 'disable')
+            | list
+          }}
+
+    - name: Save disabled rules to HTML
+      copy:
+        content: |
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <title>Disabled Firewall Rules</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              table { border-collapse: collapse; width: 100%; }
+              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+              th { background-color: #f2f2f2; }
+            </style>
+          </head>
+          <body>
+            <h1>Disabled Firewall Rules</h1>
+            {% if disabled_rules | length > 0 %}
+            <table>
+              <tr>
+                <th>ID</th><th>Name</th><th>Src Intf</th><th>Dst Intf</th>
+                <th>Status</th><th>Comments</th>
+              </tr>
+              {% for rule in disabled_rules %}
+              <tr>
+                <td>{{ rule.policyid }}</td>
+                <td>{{ rule.name | default('N/A') }}</td>
+                <td>{{ rule.srcintf | default([]) | map(attribute='name') | join(', ') }}</td>
+                <td>{{ rule.dstintf | default([]) | map(attribute='name') | join(', ') }}</td>
+                <td>{{ rule.status }}</td>
+                <td>{{ rule.comments | default('') }}</td>
+              </tr>
+              {% endfor %}
+            </table>
+            {% else %}
+            <p>✅ No disabled rules found.</p>
+            {% endif %}
+          </body>
+          </html>
+        dest: "{{ output_file }}"
+      delegate_to: localhost
+
+    - name: Read the content of the generated HTML file
+      slurp:
+        src: "{{ output_file }}"
+      register: html_content_base64
+      delegate_to: localhost
+
+    - name: Decode and write HTML content again (optional safety write)
+      copy:
+        content: "{{ html_content_base64.content | b64decode }}"
+        dest: "{{ output_file }}"
+      delegate_to: localhost
+
+    - name: Ensure the target directory exists on local machine
+      shell: >
+        sshpass -p '{{ scp_password }}'
+        ssh -o StrictHostKeyChecking=no {{ local_machine_user }}@{{ local_machine_ip }}
+        "mkdir -p {{ local_machine_path }}"
+      delegate_to: localhost
+
+    - name: Copy the file from AWX controller to local machine
+      command: >
+        sshpass -p '{{ scp_password }}'
+        scp -o StrictHostKeyChecking=no {{ output_file }}
+        {{ local_machine_user }}@{{ local_machine_ip }}:{{ local_machine_path }}/
+      delegate_to: localhost
+
+    - name: Summary of Disabled Rules
+      debug:
+        msg: >
+          ✅ Finished scanning. Found {{ disabled_rules | length }} disabled firewall rule(s).
+          Report saved to {{ output_file }} and copied to {{ local_machine_path }}.
