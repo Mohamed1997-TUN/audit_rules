@@ -7,6 +7,14 @@
   vars:
     vdom: "root"
     output_file: "/home/dhia/Desktop/createfirewall/audit_rules/rules_without_comments.txt"
+    fortigate_token: "Qphsdnt9gNG4k9HNb0pd6HmkdpH4m8"  # Inline for now
+    scp_password: "96808538"
+    local_machine_ip: "192.168.11.209"
+    local_machine_user: "dhia"
+    local_machine_path: "/home/dhia/Desktop/createfirewall/audit_rules"
+    output_dir: "/home/dhia/Desktop/createfirewall"
+    output_file: "{{ output_dir }}/rules_without_comments.txt"
+    temp_file_path: "/tmp/hello_awx.txt"
 
   tasks:
 
@@ -66,3 +74,24 @@
     - name: Show result path
       debug:
         msg: "Firewall rules without comments saved to {{ output_file }}"
+
+
+    - name: Ensure the target directory exists on local machine
+      shell: >
+        sshpass -p {{ scp_password }}
+        ssh -o StrictHostKeyChecking=no {{ local_machine_user }}@{{ local_machine_ip }}
+        "mkdir -p {{ local_machine_path }}"
+      delegate_to: localhost
+
+    - name: Copy the file from AWX controller to local machine
+      command: >
+        sshpass -p {{ scp_password }}
+        scp -o StrictHostKeyChecking=no {{ output_file }}
+        {{ local_machine_user }}@{{ local_machine_ip }}:{{ local_machine_path }}/
+      delegate_to: localhost
+
+    - name: Summary of Rules Without Comments
+      debug:
+        msg: >
+          ✅ Scan complete. Found {{ rules_without_comments | length }} rule(s) without comments.
+          Report saved to {{ output_file }} and copied to {{ local_machine_path }}.
