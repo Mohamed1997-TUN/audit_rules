@@ -4,7 +4,7 @@
   connection: local
   vars:
     vdom: "root"
-    output_file: "/home/dhia/Desktop/createfirewall/jinjatest/disabled_rules.txt"
+    output_file: "/home/dhia/Desktop/createfirewall/audit_rules/disabled_rules.txt"
 
   tasks:
     - name: Get firewall policy list from FortiGate
