@@ -1,5 +1,5 @@
 ---
-- name: Get FortiGate firewall rules without comments and copy them to local machine
+- name: Get FortiGate firewall rules without comments
   hosts: fortigate
   gather_facts: no
   connection: local
@@ -7,10 +7,6 @@
   vars:
     vdom: "root"
     output_file: "/home/dhia/Desktop/createfirewall/audit_rules/rules_without_comments.txt"
-    local_machine_ip: "192.168.11.209"           # À adapter
-    local_machine_user: "dhia"                  # À adapter
-    local_machine_path: "/home/dhia/firewall"   # Dossier cible
-    scp_password: "96808538"               # À sécuriser
 
   tasks:
 
@@ -66,25 +62,7 @@
         mode: '0644'
       delegate_to: localhost
 
+
     - name: Show result path
       debug:
-        msg: "✅ Firewall rules without comments saved to {{ output_file }}"
-
-    - name: Ensure the target directory exists on local machine
-      shell: >
-        sshpass -p '{{ scp_password }}'
-        ssh -o StrictHostKeyChecking=no {{ local_machine_user }}@{{ local_machine_ip }}
-        "mkdir -p {{ local_machine_path }}"
-      delegate_to: localhost
-
-    - name: Copy the file from AWX controller to local machine
-      command: >
-        sshpass -p '{{ scp_password }}'
-        scp -o StrictHostKeyChecking=no {{ output_file }}
-        {{ local_machine_user }}@{{ local_machine_ip }}:{{ local_machine_path }}/
-      delegate_to: localhost
-
-    - name: Summary message
-      debug:
-        msg: >
-          ✅ Fichier généré et copié avec succès vers {{ local_machine_user }}@{{ local_machine_ip }}:{{ local_machine_path }}
+        msg: "Firewall rules without comments saved to {{ output_file }}"
