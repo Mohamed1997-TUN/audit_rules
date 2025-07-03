@@ -34,9 +34,9 @@
         current_epoch: "{{ current_epoch_result.stdout | int }}"
         cutoff_epoch: "{{ (current_epoch_result.stdout | int) - (cutoff_days * 86400) }}"
 
-    - name: Get firewall policy list from FortiGate
+    - name: Get firewall policy list from FortiGate (Monitor endpoint for accurate last_used data)
       uri:
-        url: "http://{{ ansible_host }}/api/v2/cmdb/firewall/policy?vdom={{ vdom }}"
+        url: "http://{{ ansible_host }}/api/v2/monitor/firewall/policy?vdom={{ vdom }}"
         method: GET
         headers:
           Authorization: "Bearer {{ fortigate_token }}"
@@ -70,16 +70,16 @@
     - name: Filter rules without comments
       set_fact:
         rules_without_comments: >-
-          {{
+          {%
             firewall_policies.json.results | selectattr('comments', 'equalto', '') | list
-          }}
+          %}
 
     - name: Filter disabled rules
       set_fact:
         disabled_rules: >-
-          {{
+          {%
             firewall_policies.json.results | selectattr('status', 'equalto', 'disable') | list
-          }}
+          %}
 
     - name: Save combined audit HTML report
       copy:
@@ -102,6 +102,7 @@
 
             <h2>1. Unused Rules (Last {{ cutoff_days }} days)</h2>
             {% if converted_unused_rules | length > 0 %}
+            <p>Total: {{ converted_unused_rules | length }} unused rules</p>
             <table>
               <tr><th>ID</th><th>Name</th><th>Last Used</th><th>Bytes</th><th>Comments</th></tr>
               {% for rule in converted_unused_rules %}
@@ -120,6 +121,7 @@
 
             <h2>2. Rules Without Comments</h2>
             {% if rules_without_comments | length > 0 %}
+            <p>Total: {{ rules_without_comments | length }} rules without comments</p>
             <table>
               <tr><th>ID</th><th>Name</th><th>Src Intf</th><th>Dst Intf</th><th>Action</th></tr>
               {% for rule in rules_without_comments %}
@@ -138,6 +140,7 @@
 
             <h2>3. Disabled Rules</h2>
             {% if disabled_rules | length > 0 %}
+            <p>Total: {{ disabled_rules | length }} disabled rules</p>
             <table>
               <tr><th>ID</th><th>Name</th><th>Status</th><th>Src Intf</th><th>Dst Intf</th><th>Comments</th></tr>
               {% for rule in disabled_rules %}
@@ -180,3 +183,4 @@
           {{ rules_without_comments | length }} without comments, 
           {{ disabled_rules | length }} disabled rules.
           Report saved to {{ output_file }} and copied to {{ local_machine_path }}.
+

@@ -1,13 +1,31 @@
+---
 - name: Get and convert unused FortiGate firewall rules since X days ago
   hosts: fortigate
   gather_facts: no
   connection: local
+
   vars:
-    cutoff_days: 10  # Modify this value according to the number of days
+    cutoff_days: 10
     vdom: "root"
-    output_file: "/home/dhia/Desktop/createfirewall/jinjatest/unused_rules_{{ cutoff_days }}days.txt"
+
+    fortigate_token: "HjGc8xyN3bq6zNH6k430qtff6znbzN"  # Inline for now
+    scp_password: "96808538"
+    local_machine_ip: "192.168.11.209"
+    local_machine_user: "dhia"
+    local_machine_path: "/home/dhia/Desktop/createfirewall/audit_rules"
+    output_dir: "/home/dhia/Desktop/createfirewall/audit_rules"
+    output_file: "{{ output_dir }}/unused_rules_{{ cutoff_days }}days.html"
+    temp_file_path: "/tmp/hello_awx.txt"
 
   tasks:
+
+    - name: Ensure output directory exists
+      file:
+        path: "{{ output_dir }}"
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+
     - name: Get current epoch timestamp (controller-side)
       command: date +%s
       delegate_to: localhost
@@ -20,48 +38,105 @@
 
     - name: Get firewall policy stats from FortiGate
       uri:
-        url: "http://{{ inventory_hostname }}/api/v2/monitor/firewall/policy?vdom={{ vdom }}"
+        url: "http://{{ ansible_host }}/api/v2/monitor/firewall/policy?vdom={{ vdom }}"
         method: GET
         headers:
-          Authorization: "Bearer {{ hostvars[inventory_hostname]['ansible_httpapi_token'] }}"
+          Authorization: "Bearer {{ fortigate_token }}"
         return_content: yes
-        validate_certs: no
+        status_code: 200
       register: policy_response
 
     - name: Filter rules unused since cutoff OR never used
       set_fact:
         unused_rules: >-
-          [{% for rule in policy_response.json.results %}
+          [{% for rule in (policy_response.json.results | default([])) %}
             {% set last_used = (rule.get('last_used', 0) | int) %}
             {% if last_used == 0 or last_used < (cutoff_epoch | int) %}
               {{ rule | combine({'last_used': last_used}) }}{% if not loop.last %},{% endif %}
             {% endif %}
           {% endfor %}]
 
-    - name: Convert 'Last Used' epoch timestamps to readable date (day only)
+    - name: Convert 'Last Used' epoch timestamps to readable date
       set_fact:
         converted_unused_rules: >-
           [{% for rule in unused_rules %}
             {% if rule.last_used != 0 %}
               {% set human_date = lookup('pipe', 'date -d @' ~ rule.last_used ~ ' "+%Y-%m-%d"') %}
-              {% set rule_with_date = rule | combine({'last_used': human_date}) %}
-              {{ rule_with_date }}{% if not loop.last %},{% endif %}
+              {{ rule | combine({'last_used': human_date}) }}{% if not loop.last %},{% endif %}
             {% else %}
-              {% set rule_with_na = rule | combine({'last_used': 'N/A'}) %}
-              {{ rule_with_na }}{% if not loop.last %},{% endif %}
+              {{ rule | combine({'last_used': 'N/A'}) }}{% if not loop.last %},{% endif %}
             {% endif %}
           {% endfor %}]
 
-    - name: Save converted rules to file
+    - name: Save unused rules to HTML for browser view
       copy:
         content: |
-          {% for rule in converted_unused_rules %}
-          ID: {{ rule.policyid }},
-          Last Used: {{ rule.last_used }},
-          Bytes: {{ rule.bytes | default('N/A') }},
-          Hit Count: {{ rule.hit_count | default('0') }},
-          Comments: {{ rule.comments | default('N/A') }}
-          -----------------------------
-          {% endfor %}
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <title>Unused Firewall Rules</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              table { border-collapse: collapse; width: 100%; }
+              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+              th { background-color: #f2f2f2; }
+            </style>
+          </head>
+          <body>
+            <h1>Unused Firewall Rules (Last {{ cutoff_days }} days)</h1>
+            {% if converted_unused_rules | length > 0 %}
+            <table>
+              <tr>
+                <th>ID</th><th>Last Used</th><th>Bytes</th><th>Hit Count</th><th>Comments</th>
+              </tr>
+              {% for rule in converted_unused_rules %}
+              <tr>
+                <td>{{ rule.policyid }}</td>
+                <td>{{ rule.last_used }}</td>
+                <td>{{ rule.bytes | default('N/A') }}</td>
+                <td>{{ rule.hit_count | default('0') }}</td>
+                <td>{{ rule.comments | default('N/A') }}</td>
+              </tr>
+              {% endfor %}
+            </table>
+            {% else %}
+            <p>No unused rules found.</p>
+            {% endif %}
+          </body>
+          </html>
         dest: "{{ output_file }}"
       delegate_to: localhost
+
+    - name: Read the content of the generated HTML file
+      slurp:
+        src: "{{ output_file }}"
+      register: html_content_base64
+      delegate_to: localhost
+
+    - name: Decode and write HTML content into hello_awx.txt
+      copy:
+        content: "{{ html_content_base64.content | b64decode }}"
+        dest: "{{ output_file }}"
+      delegate_to: localhost
+
+    - name: Ensure the target directory exists on local machine
+      shell: >
+        sshpass -p {{ scp_password }}
+        ssh -o StrictHostKeyChecking=no {{ local_machine_user }}@{{ local_machine_ip }}
+        "mkdir -p {{ local_machine_path }}"
+      delegate_to: localhost
+
+    - name: Copy the file from AWX controller to local machine
+      command: >
+        sshpass -p {{ scp_password }}
+        scp -o StrictHostKeyChecking=no {{ output_file }}
+        {{ local_machine_user }}@{{ local_machine_ip }}:{{ local_machine_path }}/
+      delegate_to: localhost
+
+    - name: Summary of Unused Rules Detected
+      debug:
+        msg: >
+          ✅ Finished scanning. Found {{ unused_rules | length }} unused rule(s)
+          older than {{ cutoff_days }} days. Report saved to:
+          {{ output_file }} and copied to {{ local_machine_path }}.
