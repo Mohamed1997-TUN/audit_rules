@@ -8,12 +8,12 @@
     cutoff_days: 10
     vdom: "root"
 
-    # Paths inside AWX project directory (safe to write to)
+    # Safe paths (AWX project directory)
     output_dir: "{{ playbook_dir }}/audit_rules"
     output_file: "{{ output_dir }}/unused_rules_{{ cutoff_days }}days.html"
     temp_file_path: "{{ output_dir }}/hello_awx.txt"
 
-    # FortiGate API access and copy credentials
+    # Credentials and transfer details
     fortigate_token: "HjGc8xyN3bq6zNH6k430qtff6znbzN"
     scp_password: "96808538"
     local_machine_ip: "192.168.11.209"
@@ -27,15 +27,18 @@
         path: "{{ output_dir }}"
         state: directory
         mode: '0755'
+      run_once: true
 
     - name: Get current epoch timestamp (controller-side)
       command: date +%s
       register: current_epoch_result
+      run_once: true
 
     - name: Set current and cutoff epoch
       set_fact:
         current_epoch: "{{ current_epoch_result.stdout | int }}"
         cutoff_epoch: "{{ (current_epoch_result.stdout | int) - (cutoff_days * 86400) }}"
+      run_once: true
 
     - name: Wait before calling the API to avoid rate limiting
       pause:
@@ -62,6 +65,7 @@
               {{ rule | combine({'last_used': last_used}) }}{% if not loop.last %},{% endif %}
             {% endif %}
           {% endfor %}]
+      run_once: true
 
     - name: Convert 'Last Used' epoch timestamps to readable date
       set_fact:
@@ -74,6 +78,7 @@
               {{ rule | combine({'last_used': 'N/A'}) }}{% if not loop.last %},{% endif %}
             {% endif %}
           {% endfor %}]
+      run_once: true
 
     - name: Save unused rules to HTML for browser view
       copy:
@@ -104,28 +109,33 @@
           </body>
           </html>
         dest: "{{ output_file }}"
+      run_once: true
 
     - name: Read the content of the generated HTML file
       slurp:
         src: "{{ output_file }}"
       register: html_content_base64
+      run_once: true
 
     - name: Decode and write HTML content into hello_awx.txt
       copy:
         content: "{{ html_content_base64.content | b64decode }}"
         dest: "{{ temp_file_path }}"
+      run_once: true
 
     - name: Ensure the target directory exists on local machine
       shell: >
         sshpass -p {{ scp_password }}
         ssh -o StrictHostKeyChecking=no {{ local_machine_user }}@{{ local_machine_ip }}
         "mkdir -p {{ local_machine_path }}"
+      run_once: true
 
     - name: Copy the file from AWX controller to local machine
       command: >
         sshpass -p {{ scp_password }}
         scp -o StrictHostKeyChecking=no {{ output_file }}
         {{ local_machine_user }}@{{ local_machine_ip }}:{{ local_machine_path }}/
+      run_once: true
 
     - name: Summary of Unused Rules Detected
       debug:
@@ -133,3 +143,4 @@
           ✅ Finished scanning. Found {{ unused_rules | length }} unused rule(s)
           older than {{ cutoff_days }} days. Report saved to:
           {{ output_file }} and copied to {{ local_machine_path }}.
+      run_once: true
