@@ -8,12 +8,12 @@
     cutoff_days: 10
     vdom: "root"
 
-    # Safe paths (AWX project directory)
+    # Safe paths inside the AWX project directory
     output_dir: "{{ playbook_dir }}/audit_rules"
     output_file: "{{ output_dir }}/unused_rules_{{ cutoff_days }}days.html"
     temp_file_path: "{{ output_dir }}/hello_awx.txt"
 
-    # Credentials and transfer details
+    # FortiGate API token and SCP credentials
     fortigate_token: "HjGc8xyN3bq6zNH6k430qtff6znbzN"
     scp_password: "96808538"
     local_machine_ip: "192.168.11.209"
