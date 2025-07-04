@@ -10,9 +10,9 @@
     output_file: "{{ output_dir }}/unused_rules_{{ cutoff_days }}days.html"
     temp_file_path: "{{ output_dir }}/hello_awx.txt"
 
-    fortigate_token: "HjGc8xyN3bq6zNH6k430qtff6znbzN"  # Inline token
+    fortigate_token: "HjGc8xyN3bq6zNH6k430qtff6znbzN"  # (secure this externally in real setups)
     scp_password: "96808538"
-    local_machine_ip: "192.168.11.216"
+    local_machine_ip: "192.168.11.209"
     local_machine_user: "dhia"
     local_machine_path: "/home/dhia/Desktop/createfirewall/audit_rules"
 
@@ -49,13 +49,15 @@
           Authorization: "Bearer {{ fortigate_token }}"
         return_content: yes
       register: policy_response
-      until: policy_response.status == 200
+      until: policy_response.status_code == 200
       retries: 5
       delay: 10
+      failed_when: policy_response.status_code != 200
 
-    - name: Debug API response to verify structure
+    - name: Debug API response structure (optional)
       debug:
-        var: policy_response
+        var: policy_response.json
+      when: policy_response.json is defined
 
     - name: Filter rules unused since cutoff OR never used
       set_fact:
