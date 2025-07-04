@@ -1,19 +1,19 @@
----
-- name: Combined FortiGate Firewall Rule Audit (Unused, No-Comment, Disabled)
+- name: Detect and export disabled, without comments, and unused FortiGate firewall rules
   hosts: fortigate
   gather_facts: no
   connection: local
+  become: false  # Disable privilege escalation
 
   vars:
     vdom: "root"
-    cutoff_days: 10
     fortigate_token: "HjGc8xyN3bq6zNH6k430qtff6znbzN"
     scp_password: "96808538"
     local_machine_ip: "192.168.11.209"
     local_machine_user: "dhia"
     local_machine_path: "/home/dhia/Desktop/createfirewall/audit_rules"
     output_dir: "/home/dhia/Desktop/createfirewall/audit_rules"
-    output_file: "{{ output_dir }}/combined_firewall_audit_report.html"
+    output_file: "{{ output_dir }}/firewall_rules_report.html"
+    cutoff_days: 10  # Days to check for unused rules
 
   tasks:
 
@@ -24,163 +24,172 @@
         mode: '0755'
       delegate_to: localhost
 
-    - name: Get current epoch timestamp
-      command: date +%s
-      register: current_epoch_result
-      delegate_to: localhost
-
-    - name: Set current and cutoff epoch
-      set_fact:
-        current_epoch: "{{ current_epoch_result.stdout | int }}"
-        cutoff_epoch: "{{ (current_epoch_result.stdout | int) - (cutoff_days * 86400) }}"
-
-    - name: Get firewall policy list from FortiGate (Monitor endpoint for accurate last_used data)
+    - name: Get firewall policy list from FortiGate
       uri:
-        url: "http://{{ ansible_host }}/api/v2/monitor/firewall/policy?vdom={{ vdom }}"
+        url: "http://{{ ansible_host }}/api/v2/cmdb/firewall/policy?vdom={{ vdom }}"
         method: GET
         headers:
           Authorization: "Bearer {{ fortigate_token }}"
         return_content: yes
-        status_code: 200
         validate_certs: no
       register: firewall_policies
 
-    - name: Filter unused rules (last_used = 0 or < cutoff)
+    - name: Extract disabled rules
+      set_fact:
+        disabled_rules: >-
+          {{
+            firewall_policies.json.results
+            | selectattr('status', 'equalto', 'disable')
+            | list
+          }}
+
+    - name: Extract rules without comments
+      set_fact:
+        rules_without_comments: >-
+          {{
+            firewall_policies.json.results
+            | selectattr('comments', 'equalto', '')
+            | list
+          }}
+
+    - name: Get current epoch timestamp for unused rules
+      command: date +%s
+      delegate_to: localhost
+      register: current_epoch_result
+
+    - name: Set cutoff epoch for unused rules
+      set_fact:
+        current_epoch: "{{ current_epoch_result.stdout | int }}"
+        cutoff_epoch: "{{ (current_epoch_result.stdout | int) - (cutoff_days * 86400) }}"
+
+    - name: Extract unused rules (older than cutoff)
       set_fact:
         unused_rules: >-
-          [{% for rule in firewall_policies.json.results | default([]) %}
-            {% set last_used = rule.get('last_used', 0) | int %}
-            {% if last_used == 0 or last_used < cutoff_epoch %}
+          [{% for rule in firewall_policies.json.results %} 
+            {% set last_used = (rule.get('last_used', 0) | int) %}
+            {% if last_used == 0 or last_used < (cutoff_epoch | int) %}
               {{ rule | combine({'last_used': last_used}) }}{% if not loop.last %},{% endif %}
             {% endif %}
           {% endfor %}]
 
-    - name: Convert last_used to readable date
-      set_fact:
-        converted_unused_rules: >-
-          [{% for rule in unused_rules %}
-            {% if rule.last_used != 0 %}
-              {% set human_date = lookup('pipe', 'date -d @' ~ rule.last_used ~ ' "+%Y-%m-%d"') %}
-              {{ rule | combine({'last_used': human_date}) }}{% if not loop.last %},{% endif %}
-            {% else %}
-              {{ rule | combine({'last_used': 'Never Used'}) }}{% if not loop.last %},{% endif %}
-            {% endif %}
-          {% endfor %}]
-
-    - name: Filter rules without comments
-      set_fact:
-        rules_without_comments: >-
-          {%
-            firewall_policies.json.results | selectattr('comments', 'equalto', '') | list
-          %}
-
-    - name: Filter disabled rules
-      set_fact:
-        disabled_rules: >-
-          {%
-            firewall_policies.json.results | selectattr('status', 'equalto', 'disable') | list
-          %}
-
-    - name: Save combined audit HTML report
+    - name: Save rules to HTML
       copy:
         content: |
           <!DOCTYPE html>
           <html>
           <head>
             <meta charset="utf-8">
-            <title>Combined FortiGate Firewall Audit Report</title>
+            <title>FortiGate Firewall Rules Report</title>
             <style>
               body { font-family: Arial, sans-serif; margin: 20px; }
-              h2 { margin-top: 40px; }
-              table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+              table { border-collapse: collapse; width: 100%; }
               th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
               th { background-color: #f2f2f2; }
             </style>
           </head>
           <body>
-            <h1>FortiGate Firewall Audit Report</h1>
-
-            <h2>1. Unused Rules (Last {{ cutoff_days }} days)</h2>
-            {% if converted_unused_rules | length > 0 %}
-            <p>Total: {{ converted_unused_rules | length }} unused rules</p>
-            <table>
-              <tr><th>ID</th><th>Name</th><th>Last Used</th><th>Bytes</th><th>Comments</th></tr>
-              {% for rule in converted_unused_rules %}
-              <tr>
-                <td>{{ rule.policyid }}</td>
-                <td>{{ rule.name }}</td>
-                <td>{{ rule.last_used }}</td>
-                <td>{{ rule.bytes | default('N/A') }}</td>
-                <td>{{ rule.comments | default('') }}</td>
-              </tr>
-              {% endfor %}
-            </table>
-            {% else %}
-            <p>✅ No unused rules found.</p>
-            {% endif %}
-
-            <h2>2. Rules Without Comments</h2>
-            {% if rules_without_comments | length > 0 %}
-            <p>Total: {{ rules_without_comments | length }} rules without comments</p>
-            <table>
-              <tr><th>ID</th><th>Name</th><th>Src Intf</th><th>Dst Intf</th><th>Action</th></tr>
-              {% for rule in rules_without_comments %}
-              <tr>
-                <td>{{ rule.policyid }}</td>
-                <td>{{ rule.name }}</td>
-                <td>{{ rule.srcintf | map(attribute='name') | join(', ') }}</td>
-                <td>{{ rule.dstintf | map(attribute='name') | join(', ') }}</td>
-                <td>{{ rule.action }}</td>
-              </tr>
-              {% endfor %}
-            </table>
-            {% else %}
-            <p>✅ All rules have comments.</p>
-            {% endif %}
-
-            <h2>3. Disabled Rules</h2>
+            <h1>FortiGate Firewall Rules Report</h1>
+            <h2>Disabled Firewall Rules</h2>
             {% if disabled_rules | length > 0 %}
-            <p>Total: {{ disabled_rules | length }} disabled rules</p>
             <table>
-              <tr><th>ID</th><th>Name</th><th>Status</th><th>Src Intf</th><th>Dst Intf</th><th>Comments</th></tr>
+              <tr>
+                <th>ID</th><th>Name</th><th>Src Intf</th><th>Dst Intf</th>
+                <th>Status</th><th>Comments</th>
+              </tr>
               {% for rule in disabled_rules %}
               <tr>
                 <td>{{ rule.policyid }}</td>
-                <td>{{ rule.name }}</td>
+                <td>{{ rule.name | default('N/A') }}</td>
+                <td>{{ rule.srcintf | default([]) | map(attribute='name') | join(', ') }}</td>
+                <td>{{ rule.dstintf | default([]) | map(attribute='name') | join(', ') }}</td>
                 <td>{{ rule.status }}</td>
-                <td>{{ rule.srcintf | map(attribute='name') | join(', ') }}</td>
-                <td>{{ rule.dstintf | map(attribute='name') | join(', ') }}</td>
-                <td>{{ rule.comments | default('') }}</td>
+                <td>{{ rule.comments | default('N/A') }}</td>
               </tr>
               {% endfor %}
             </table>
             {% else %}
-            <p>✅ No disabled rules found.</p>
+            <p>No disabled rules found.</p>
+            {% endif %}
+
+            <h2>Firewall Rules Without Comments</h2>
+            {% if rules_without_comments | length > 0 %}
+            <table>
+              <tr>
+                <th>ID</th><th>Name</th><th>Src Intf</th><th>Dst Intf</th>
+                <th>Status</th><th>Comments</th>
+              </tr>
+              {% for rule in rules_without_comments %}
+              <tr>
+                <td>{{ rule.policyid }}</td>
+                <td>{{ rule.name | default('N/A') }}</td>
+                <td>{{ rule.srcintf | default([]) | map(attribute='name') | join(', ') }}</td>
+                <td>{{ rule.dstintf | default([]) | map(attribute='name') | join(', ') }}</td>
+                <td>{{ rule.status }}</td>
+                <td>{{ rule.comments | default('N/A') }}</td>
+              </tr>
+              {% endfor %}
+            </table>
+            {% else %}
+            <p>No rules without comments found.</p>
+            {% endif %}
+
+            <h2>Unused Firewall Rules (Older than {{ cutoff_days }} days)</h2>
+            {% if unused_rules | length > 0 %}
+            <table>
+              <tr>
+                <th>ID</th><th>Name</th><th>Src Intf</th><th>Dst Intf</th>
+                <th>Status</th><th>Last Used</th><th>Comments</th>
+              </tr>
+              {% for rule in unused_rules %}
+              <tr>
+                <td>{{ rule.policyid }}</td>
+                <td>{{ rule.name | default('N/A') }}</td>
+                <td>{{ rule.srcintf | default([]) | map(attribute='name') | join(', ') }}</td>
+                <td>{{ rule.dstintf | default([]) | map(attribute='name') | join(', ') }}</td>
+                <td>{{ rule.status }}</td>
+                <td>{{ rule.last_used | default('N/A') }}</td>
+                <td>{{ rule.comments | default('N/A') }}</td>
+              </tr>
+              {% endfor %}
+            </table>
+            {% else %}
+            <p>No unused rules found.</p>
             {% endif %}
           </body>
           </html>
         dest: "{{ output_file }}"
       delegate_to: localhost
 
-    - name: Ensure target directory exists on local machine
+    - name: Read the content of the generated HTML file
+      slurp:
+        src: "{{ output_file }}"
+      register: html_content_base64
+      delegate_to: localhost
+
+    - name: Decode and write HTML content again (optional safety write)
+      copy:
+        content: "{{ html_content_base64.content | b64decode }}"
+        dest: "{{ output_file }}"
+      delegate_to: localhost
+
+    - name: Ensure the target directory exists on local machine
       shell: >
         sshpass -p '{{ scp_password }}'
         ssh -o StrictHostKeyChecking=no {{ local_machine_user }}@{{ local_machine_ip }}
         "mkdir -p {{ local_machine_path }}"
       delegate_to: localhost
 
-    - name: Copy the HTML report to local machine
+    - name: Copy the file from AWX controller to local machine
       command: >
         sshpass -p '{{ scp_password }}'
         scp -o StrictHostKeyChecking=no {{ output_file }}
         {{ local_machine_user }}@{{ local_machine_ip }}:{{ local_machine_path }}/
       delegate_to: localhost
 
-    - name: Summary of Combined Report
+    - name: Summary of Detected Rules
       debug:
         msg: >
-          ✅ Report complete. {{ converted_unused_rules | length }} unused rules, 
-          {{ rules_without_comments | length }} without comments, 
-          {{ disabled_rules | length }} disabled rules.
+          ✅ Finished scanning. Found {{ disabled_rules | length }} disabled rule(s), 
+          {{ rules_without_comments | length }} rule(s) without comments, 
+          and {{ unused_rules | length }} unused rule(s).
           Report saved to {{ output_file }} and copied to {{ local_machine_path }}.
-
