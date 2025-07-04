@@ -2,6 +2,7 @@
   hosts: fortigate
   gather_facts: no
   connection: local
+  become: false  # Disable privilege escalation
 
   vars:
     vdom: "root"
@@ -14,6 +15,7 @@
     output_file: "{{ output_dir }}/disabled_rules.html"
 
   tasks:
+
     - name: Ensure output directory exists
       file:
         path: "{{ output_dir }}"
@@ -31,10 +33,6 @@
         validate_certs: no
         status_code: 200
       register: firewall_policies
-
-    - name: Debug firewall policies
-      debug:
-        var: firewall_policies
 
     - name: Extract disabled rules
       set_fact:
