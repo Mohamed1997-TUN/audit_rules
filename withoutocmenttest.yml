@@ -3,6 +3,7 @@
   hosts: fortigate
   gather_facts: no
   connection: local
+  become: false
 
   vars:
     vdom: "root"
