@@ -11,9 +11,9 @@
     output_file: "{{ output_dir }}/unused_rules_{{ cutoff_days }}days.html"
     temp_file_path: "{{ output_dir }}/hello_awx.txt"
 
-    fortigate_token: "HjGc8xyN3bq6zNH6k430qtff6znbzN"  # ❗ In production, use a Vault or AWX credential
+    fortigate_token: "HjGc8xyN3bq6zNH6k430qtff6znbzN"
     scp_password: "96808538"
-    local_machine_ip: "192.168.11.216"
+    local_machine_ip: "192.168.11.209"
     local_machine_user: "dhia"
     local_machine_path: "/home/dhia/Desktop/createfirewall/audit_rules"
 
@@ -25,20 +25,18 @@
         state: directory
         mode: '0755'
       delegate_to: localhost
-      become: false
 
     - name: Get current epoch timestamp
       command: date +%s
       register: current_epoch_result
       delegate_to: localhost
-      become: false
 
-    - name: Calculate cutoff epoch
+    - name: Set current and cutoff epoch
       set_fact:
         current_epoch: "{{ current_epoch_result.stdout | int }}"
-        cutoff_epoch: "{{ (current_epoch_result.stdout | int) - (cutoff_days * 86400) }}"
+        cutoff_epoch: "{{ (current_epoch_result.stdout | int) - (cutoff_days | int * 86400) }}"
 
-    - name: Wait before API call (rate limit protection)
+    - name: Wait before calling the API
       pause:
         seconds: 2
 
@@ -51,7 +49,7 @@
         return_content: yes
       register: policy_response
 
-    - name: Debug the raw API response
+    - name: Debug API response
       debug:
         var: policy_response
 
@@ -60,7 +58,7 @@
         unused_rules: >-
           [{% for rule in (policy_response.json.results | default([])) %}
             {% set last_used = (rule.get('last_used', 0) | int) %}
-            {% if last_used == 0 or last_used < cutoff_epoch %}
+            {% if last_used == 0 or last_used < (cutoff_epoch | int) %}
               {{ rule | combine({'last_used': last_used}) }}{% if not loop.last %},{% endif %}
             {% endif %}
           {% endfor %}]
@@ -77,7 +75,7 @@
             {% endif %}
           {% endfor %}]
 
-    - name: Generate HTML report
+    - name: Save unused rules to HTML for browser view
       copy:
         content: |
           <!DOCTYPE html>
@@ -107,37 +105,32 @@
           </html>
         dest: "{{ output_file }}"
       delegate_to: localhost
-      become: false
 
-    - name: Read HTML report content
+    - name: Read the HTML content
       slurp:
         src: "{{ output_file }}"
       register: html_content_base64
       delegate_to: localhost
-      become: false
 
     - name: Decode and write HTML content into hello_awx.txt
       copy:
         content: "{{ html_content_base64.content | b64decode }}"
         dest: "{{ temp_file_path }}"
       delegate_to: localhost
-      become: false
 
-    - name: Create destination path on local machine
+    - name: Create remote directory on local machine
       shell: >
         sshpass -p {{ scp_password }}
         ssh -o StrictHostKeyChecking=no {{ local_machine_user }}@{{ local_machine_ip }}
         "mkdir -p {{ local_machine_path }}"
       delegate_to: localhost
-      become: false
 
-    - name: SCP the HTML report to target machine
+    - name: SCP the report to local machine
       command: >
         sshpass -p {{ scp_password }}
         scp -o StrictHostKeyChecking=no {{ output_file }}
         {{ local_machine_user }}@{{ local_machine_ip }}:{{ local_machine_path }}/
       delegate_to: localhost
-      become: false
 
     - name: Summary
       debug:
