@@ -10,7 +10,7 @@
     output_file: "{{ output_dir }}/unused_rules_{{ cutoff_days }}days.html"
     temp_file_path: "{{ output_dir }}/hello_awx.txt"
 
-    fortigate_token: "HjGc8xyN3bq6zNH6k430qtff6znbzN"  # Store this securely in production
+    fortigate_token: "HjGc8xyN3bq6zNH6k430qtff6znbzN"  # ❗ In production, use a Vault or AWX credential
     scp_password: "96808538"
     local_machine_ip: "192.168.11.209"
     local_machine_user: "dhia"
@@ -49,10 +49,10 @@
           Authorization: "Bearer {{ fortigate_token }}"
         return_content: yes
       register: policy_response
-      until: policy_response.status == 200  # ✅ Fixed from status_code
-      retries: 5
-      delay: 10
-      failed_when: policy_response.status != 200
+
+    - name: Debug the raw API response
+      debug:
+        var: policy_response
 
     - name: Filter unused rules (never used or not used since X days)
       set_fact:
@@ -122,7 +122,7 @@
       delegate_to: localhost
       become: false
 
-    - name: Create destination path on target machine
+    - name: Create destination path on local machine
       shell: >
         sshpass -p {{ scp_password }}
         ssh -o StrictHostKeyChecking=no {{ local_machine_user }}@{{ local_machine_ip }}
