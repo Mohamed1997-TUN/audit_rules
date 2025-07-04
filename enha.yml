@@ -2,6 +2,7 @@
   hosts: fortigate
   gather_facts: no
   connection: local
+  become: false
 
   vars:
     cutoff_days: 10
