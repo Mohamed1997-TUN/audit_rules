@@ -7,7 +7,7 @@
 
   vars:
     vdom: "root"
-    fortigate_token: "Qphsdnt9gNG4k9HNb0pd6HmkdpH4m8"  # Replace with your actual token
+    fortigate_token: "HjGc8xyN3bq6zNH6k430qtff6znbzN"  # Replace with your actual token
     scp_password: "96808538"
     local_machine_ip: "192.168.11.216"
     local_machine_user: "dhia"
