@@ -4,13 +4,13 @@
   connection: local
 
   vars:
-    cutoff_days: 10  # Number of days to determine unused rules
+    cutoff_days: 10
     vdom: "root"
     output_dir: "/home/dhia/Desktop/createfirewall/audit_rules"
     output_file: "{{ output_dir }}/unused_rules_{{ cutoff_days }}days.html"
     temp_file_path: "{{ output_dir }}/hello_awx.txt"
 
-    fortigate_token: "HjGc8xyN3bq6zNH6k430qtff6znbzN"  # (secure this externally in real setups)
+    fortigate_token: "HjGc8xyN3bq6zNH6k430qtff6znbzN"  # Store this securely in production
     scp_password: "96808538"
     local_machine_ip: "192.168.11.209"
     local_machine_user: "dhia"
@@ -26,22 +26,22 @@
       delegate_to: localhost
       become: false
 
-    - name: Get current epoch timestamp (controller-side)
+    - name: Get current epoch timestamp
       command: date +%s
-      delegate_to: localhost
       register: current_epoch_result
+      delegate_to: localhost
       become: false
 
-    - name: Set current and cutoff epoch
+    - name: Calculate cutoff epoch
       set_fact:
         current_epoch: "{{ current_epoch_result.stdout | int }}"
         cutoff_epoch: "{{ (current_epoch_result.stdout | int) - (cutoff_days * 86400) }}"
 
-    - name: Wait before calling the API to avoid rate limiting
+    - name: Wait before API call (rate limit protection)
       pause:
         seconds: 2
 
-    - name: Get firewall policy stats from FortiGate (with retry on 429)
+    - name: Get firewall policy stats from FortiGate
       uri:
         url: "http://{{ ansible_host }}/api/v2/monitor/firewall/policy?vdom={{ vdom }}"
         method: GET
@@ -49,27 +49,22 @@
           Authorization: "Bearer {{ fortigate_token }}"
         return_content: yes
       register: policy_response
-      until: policy_response.status_code == 200
+      until: policy_response.status == 200  # ✅ Fixed from status_code
       retries: 5
       delay: 10
-      failed_when: policy_response.status_code != 200
+      failed_when: policy_response.status != 200
 
-    - name: Debug API response structure (optional)
-      debug:
-        var: policy_response.json
-      when: policy_response.json is defined
-
-    - name: Filter rules unused since cutoff OR never used
+    - name: Filter unused rules (never used or not used since X days)
       set_fact:
         unused_rules: >-
           [{% for rule in (policy_response.json.results | default([])) %}
             {% set last_used = (rule.get('last_used', 0) | int) %}
-            {% if last_used == 0 or last_used < (cutoff_epoch | int) %}
+            {% if last_used == 0 or last_used < cutoff_epoch %}
               {{ rule | combine({'last_used': last_used}) }}{% if not loop.last %},{% endif %}
             {% endif %}
           {% endfor %}]
 
-    - name: Convert 'Last Used' epoch timestamps to readable date
+    - name: Convert last_used to readable date
       set_fact:
         converted_unused_rules: >-
           [{% for rule in unused_rules %}
@@ -81,7 +76,7 @@
             {% endif %}
           {% endfor %}]
 
-    - name: Save unused rules to HTML for browser view
+    - name: Generate HTML report
       copy:
         content: |
           <!DOCTYPE html>
@@ -96,7 +91,7 @@
           </head>
           <body>
             <h1>Unused Firewall Rules (Last {{ cutoff_days }} days)</h1>
-            {% for rule in converted_unused_rules | default([]) %}
+            {% for rule in converted_unused_rules %}
               <div class="rule">
                 <strong>ID:</strong> {{ rule.policyid }}<br>
                 <strong>Last Used:</strong> {{ rule.last_used }}<br>
@@ -113,7 +108,7 @@
       delegate_to: localhost
       become: false
 
-    - name: Read the content of the generated HTML file
+    - name: Read HTML report content
       slurp:
         src: "{{ output_file }}"
       register: html_content_base64
@@ -127,7 +122,7 @@
       delegate_to: localhost
       become: false
 
-    - name: Ensure the target directory exists on local machine
+    - name: Create destination path on target machine
       shell: >
         sshpass -p {{ scp_password }}
         ssh -o StrictHostKeyChecking=no {{ local_machine_user }}@{{ local_machine_ip }}
@@ -135,7 +130,7 @@
       delegate_to: localhost
       become: false
 
-    - name: Copy the file from AWX controller to local machine
+    - name: SCP the HTML report to target machine
       command: >
         sshpass -p {{ scp_password }}
         scp -o StrictHostKeyChecking=no {{ output_file }}
@@ -143,9 +138,8 @@
       delegate_to: localhost
       become: false
 
-    - name: Summary of Unused Rules Detected
+    - name: Summary
       debug:
         msg: >
-          ✅ Finished scanning. Found {{ unused_rules | length }} unused rule(s)
-          older than {{ cutoff_days }} days. Report saved to:
-          {{ output_file }} and copied to {{ local_machine_path }}.
+          ✅ {{ unused_rules | length }} unused firewall rule(s) older than {{ cutoff_days }} days.
+          HTML report saved to {{ output_file }} and copied to {{ local_machine_ip }}.
